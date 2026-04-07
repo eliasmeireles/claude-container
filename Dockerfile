@@ -70,4 +70,5 @@ RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') && \
       -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
-RUN echo 'export GPG_TTY=$(tty)' >> /etc/bash.bashrc
+RUN echo 'export GPG_TTY=$(tty)' >> /etc/bash.bashrc && \
+    echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> /etc/bash.bashrc
