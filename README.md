@@ -111,7 +111,3 @@ bash build.sh
 # or force a full rebuild
 bash build.sh --no-cache
 ```
-
-## License
-
-MIT
