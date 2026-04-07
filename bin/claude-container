@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# claude-container — Run Claude Code inside Docker with full developer tooling.
+# Requires the pre-built image: ghcr.io/eliasmeireles/claude-container
+#
+# Usage:
+#   claude-container [--kubeconfig] [prompt] [extra volume...]
+#
+# Options:
+#   --kubeconfig   Mount ~/.kube/ into the container (kubectl is pre-installed)
+#
+# Examples:
+#   claude-container
+#   claude-container "add tests for the auth package"
+#   claude-container --kubeconfig "list pods in the default namespace"
+#   claude-container "refactor the handler" /other/path:/mnt/extra
+
+set -euo pipefail
+
+IMAGE="ghcr.io/eliasmeireles/claude-container:latest"
+CONTAINER_NAME="claude-$(date +%s)"
+MOUNT_KUBECONFIG=true
+
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--kubeconfig" ]]; then
+    MOUNT_KUBECONFIG=false
+  else
+    ARGS+=("$arg")
+  fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+PROMPT="${1:-}"
+shift || true
+
+EXTRA_VOLUMES=()
+for vol in "$@"; do
+  EXTRA_VOLUMES+=("--volume" "${vol}")
+done
+
+EXTRA_ENVS=()
+[[ -n "${ANTHROPIC_API_KEY:-}" ]]            && EXTRA_ENVS+=(--env "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}")
+[[ -n "${GITHUB_PERSONAL_ACCESS_TOKEN:-}" ]] && EXTRA_ENVS+=(--env "GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}")
+[[ -n "${VAULT_ADDR:-}" ]]                   && EXTRA_ENVS+=(--env "VAULT_ADDR=${VAULT_ADDR}")
+[[ -n "${VAULT_NAMESPACE:-}" ]]              && EXTRA_ENVS+=(--env "VAULT_NAMESPACE=${VAULT_NAMESPACE}")
+[[ -n "${VAULT_TOKEN:-}" ]]                  && EXTRA_ENVS+=(--env "VAULT_TOKEN=${VAULT_TOKEN}")
+
+# Mirror the host home path inside the container so absolute paths in claude
+# config/plugins (e.g. /home/user/.claude/...) resolve correctly.
+CONTAINER_HOME="${HOME}"
+
+KUBE_VOLUMES=()
+[[ "${MOUNT_KUBECONFIG}" == "true" ]] && KUBE_VOLUMES=(--volume "${HOME}/.kube:${CONTAINER_HOME}/.kube")
+
+VAULT_VOLUMES=()
+[[ -f "${HOME}/.vault-token" ]] && VAULT_VOLUMES=(--volume "${HOME}/.vault-token:${CONTAINER_HOME}/.vault-token")
+
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+DOCKER_SOCKET_GID=$(stat -c %g /var/run/docker.sock 2>/dev/null || echo "")
+
+CLAUDE_TMP=$(mktemp -d)
+trap 'rm -rf "${CLAUDE_TMP}"' EXIT
+
+cp -rL "${HOME}/.claude"      "${CLAUDE_TMP}/.claude"
+cp -L  "${HOME}/.claude.json" "${CLAUDE_TMP}/.claude.json"
+
+docker pull "${IMAGE}"
+
+docker run --rm -it \
+  --network host \
+  --name "${CONTAINER_NAME}" \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  "${EXTRA_ENVS[@]+"${EXTRA_ENVS[@]}"}"\
+  --env HOME="${CONTAINER_HOME}" \
+  --volume "$(pwd):/workspace" \
+  --volume "${CLAUDE_TMP}/.claude:${CONTAINER_HOME}/.claude" \
+  --volume "${CLAUDE_TMP}/.claude.json:${CONTAINER_HOME}/.claude.json" \
+  --volume "${HOME}/.ssh:${CONTAINER_HOME}/.ssh:ro" \
+  --volume "${HOME}/.gitconfig:${CONTAINER_HOME}/.gitconfig:ro" \
+  --volume "${HOME}/.config/gh:${CONTAINER_HOME}/.config/gh:ro" \
+  --volume "${HOME}/.gnupg:${CONTAINER_HOME}/.gnupg" \
+  "${KUBE_VOLUMES[@]+"${KUBE_VOLUMES[@]}"}"\
+  "${VAULT_VOLUMES[@]+"${VAULT_VOLUMES[@]}"}"\
+  "${EXTRA_VOLUMES[@]+"${EXTRA_VOLUMES[@]}"}"\
+  --workdir /workspace \
+  "${IMAGE}" \
+  bash -c "
+    RUN_USER=\$(getent passwd ${HOST_UID} | cut -d: -f1); \
+    if [[ -z \"\$RUN_USER\" ]]; then \
+      groupadd -f -g ${HOST_GID} claude 2>/dev/null; \
+      useradd -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -d ${CONTAINER_HOME} -M claude 2>/dev/null; \
+      RUN_USER=claude; \
+    fi && \
+    if [[ -n '${DOCKER_SOCKET_GID}' ]]; then \
+      groupadd -f -g ${DOCKER_SOCKET_GID} docker 2>/dev/null; \
+      usermod -aG docker \"\$RUN_USER\" 2>/dev/null || true; \
+    fi && \
+    mkdir -p ${CONTAINER_HOME} && \
+    chown -R ${HOST_UID}:${HOST_GID} ${CONTAINER_HOME} /workspace 2>/dev/null || true && \
+    su -s /bin/bash \"\$RUN_USER\" -c \"
+      export HOME=${CONTAINER_HOME}
+      if [[ -n '${PROMPT}' ]]; then
+        claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p '${PROMPT}'
+      else
+        claude --dangerously-skip-permissions --model claude-sonnet-4-6
+      fi
+    \"
+  "
