@@ -112,7 +112,7 @@ docker run --rm -it \
       chmod 700 ${CONTAINER_HOME}/.gnupg
       grep -qxF 'pinentry-program /usr/bin/pinentry-curses' ${CONTAINER_HOME}/.gnupg/gpg-agent.conf 2>/dev/null || echo 'pinentry-program /usr/bin/pinentry-curses' >> ${CONTAINER_HOME}/.gnupg/gpg-agent.conf
       gpgconf --kill gpg-agent 2>/dev/null || true
-      echo "test" | gpg --clearsign
+      echo "test" | gpg --clearsign || true 
       if [[ -n '${PROMPT}' ]]; then
         claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p '${PROMPT}'
       else
