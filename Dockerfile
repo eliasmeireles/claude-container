@@ -22,6 +22,7 @@ RUN apt-get update -qq && \
       less \
       htop \
       lsof \
+      make \
       openssh-client \
       bash-completion \
       python3 \
