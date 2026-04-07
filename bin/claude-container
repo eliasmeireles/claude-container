@@ -3,13 +3,15 @@
 # Requires the pre-built image: ghcr.io/eliasmeireles/claude-container
 #
 # Usage:
-#   claude-container [--kubeconfig] [prompt] [extra volume...]
+#   claude-container [--kubeconfig] [--local] [prompt] [extra volume...]
 #
 # Options:
 #   --kubeconfig   Mount ~/.kube/ into the container (kubectl is pre-installed)
+#   --local        Use locally built image (ghcr.io/eliasmeireles/claude-container:local), skip pull
 #
 # Examples:
 #   claude-container
+#   claude-container --local
 #   claude-container "add tests for the auth package"
 #   claude-container --kubeconfig "list pods in the default namespace"
 #   claude-container "refactor the handler" /other/path:/mnt/extra
@@ -19,11 +21,15 @@ set -euo pipefail
 IMAGE="ghcr.io/eliasmeireles/claude-container:latest"
 CONTAINER_NAME="claude-$(date +%s)"
 MOUNT_KUBECONFIG=true
+SKIP_PULL=false
 
 ARGS=()
 for arg in "$@"; do
   if [[ "$arg" == "--kubeconfig" ]]; then
     MOUNT_KUBECONFIG=false
+  elif [[ "$arg" == "--local" ]]; then
+    IMAGE="ghcr.io/eliasmeireles/claude-container:local"
+    SKIP_PULL=true
   else
     ARGS+=("$arg")
   fi
@@ -65,7 +71,7 @@ trap 'rm -rf "${CLAUDE_TMP}"' EXIT
 cp -rL "${HOME}/.claude"      "${CLAUDE_TMP}/.claude"
 cp -L  "${HOME}/.claude.json" "${CLAUDE_TMP}/.claude.json"
 
-docker pull "${IMAGE}"
+[[ "${SKIP_PULL}" == "false" ]] && docker pull "${IMAGE}"
 
 docker run --rm -it \
   --network host \
@@ -98,9 +104,15 @@ docker run --rm -it \
     fi && \
     mkdir -p ${CONTAINER_HOME} && \
     chown -R ${HOST_UID}:${HOST_GID} ${CONTAINER_HOME} /workspace 2>/dev/null || true && \
+    chown ${HOST_UID}:${HOST_GID} \$(tty) 2>/dev/null || true && \
     su -s /bin/bash \"\$RUN_USER\" -c \"
       export HOME=${CONTAINER_HOME}
       export GPG_TTY=\$(tty)
+      mkdir -p ${CONTAINER_HOME}/.gnupg
+      chmod 700 ${CONTAINER_HOME}/.gnupg
+      grep -qxF 'pinentry-program /usr/bin/pinentry-curses' ${CONTAINER_HOME}/.gnupg/gpg-agent.conf 2>/dev/null || echo 'pinentry-program /usr/bin/pinentry-curses' >> ${CONTAINER_HOME}/.gnupg/gpg-agent.conf
+      gpgconf --kill gpg-agent 2>/dev/null || true
+      echo "test" | gpg --clearsign
       if [[ -n '${PROMPT}' ]]; then
         claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p '${PROMPT}'
       else

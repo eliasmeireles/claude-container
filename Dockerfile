@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
-      ca-certificates curl git gpg gnupg \
+      ca-certificates curl git gpg gnupg pinentry-curses \
       vim \
       iputils-ping \
       dnsutils \
