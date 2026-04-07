@@ -15,23 +15,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IMAGE_NAME="ghcr.io/eliasmeireles/claude-container"
 VERSION_TAG="$(date +%Y%m%d)"
-PLATFORMS="linux/amd64,linux/arm64"
 
 NO_CACHE=""
 [[ "${1:-}" == "--no-cache" ]] && NO_CACHE="--no-cache"
 
-echo "Building ${IMAGE_NAME} for platforms: ${PLATFORMS}"
+for ARCH in amd64 arm64; do
+  echo "Building ${IMAGE_NAME} for linux/${ARCH}"
 
-docker buildx build \
-  ${NO_CACHE} \
-  --platform "${PLATFORMS}" \
-  --tag "${IMAGE_NAME}:latest" \
-  --tag "${IMAGE_NAME}:${VERSION_TAG}" \
-  --file "${SCRIPT_DIR}/Dockerfile" \
-  --push \
-  "${SCRIPT_DIR}"
+  docker buildx build \
+    ${NO_CACHE} \
+    --platform "linux/${ARCH}" \
+    --tag "${IMAGE_NAME}:latest-${ARCH}" \
+    --tag "${IMAGE_NAME}:${VERSION_TAG}-${ARCH}" \
+    --file "${SCRIPT_DIR}/Dockerfile" \
+    --push \
+    "${SCRIPT_DIR}"
 
-echo ""
-echo "Pushed:"
-echo "  ${IMAGE_NAME}:latest"
-echo "  ${IMAGE_NAME}:${VERSION_TAG}"
+  echo ""
+  echo "Pushed:"
+  echo "  ${IMAGE_NAME}:latest-${ARCH}"
+  echo "  ${IMAGE_NAME}:${VERSION_TAG}-${ARCH}"
+  echo ""
+done
