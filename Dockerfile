@@ -69,3 +69,5 @@ RUN ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') && \
     curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${ARCH}/kubectl" \
       -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
+
+RUN echo 'export GPG_TTY=$(tty)' >> /etc/bash.bashrc
