@@ -100,6 +100,7 @@ docker run --rm -it \
     chown -R ${HOST_UID}:${HOST_GID} ${CONTAINER_HOME} /workspace 2>/dev/null || true && \
     su -s /bin/bash \"\$RUN_USER\" -c \"
       export HOME=${CONTAINER_HOME}
+      export GPG_TTY=\$(tty)
       if [[ -n '${PROMPT}' ]]; then
         claude --dangerously-skip-permissions --model claude-sonnet-4-6 -p '${PROMPT}'
       else
